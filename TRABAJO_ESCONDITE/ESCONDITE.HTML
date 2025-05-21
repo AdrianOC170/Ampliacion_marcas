@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Juego de Dados</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to bottom, #a2c0e8, #ffffff);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    canvas {
+      border: 3px solid #333;
+      background: #fff;
+      margin-bottom: 20px;
+    }
+    .controls {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .player-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    button {
+      padding: 6px 12px;
+      margin-top: 5px;
+      border: none;
+      background-color: #3498db;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    #log {
+      max-width: 700px;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 10px;
+      border-radius: 8px;
+      overflow-y: auto;
+      max-height: 300px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="500" height="500"></canvas>
+  <div class="controls" id="controls"></div>
+  <div id="log"></div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const numCasillas = 10;
+    const casillaHeight = canvas.height / numCasillas;
+
+    const players = [
+      { name: 'j1', img: 'j1.jpg', pos: 1, heart: false, action: null },
+      { name: 'j2', img: 'j2.jpg', pos: 1, heart: false, action: null },
+      { name: 'j3', img: 'j3.jpg', pos: 1, heart: false, action: null }
+    ];
+
+    const diceImgs = [
+      'D1.JPG', 'D2.JPG', 'D3.JPG', 'D4.JPG'
+    ];
+
+    const diceConfig = {
+      'D1.JPG': [1,1,1,1,2,2],
+      'D2.JPG': [1,1,1,1,0,0],
+      'D3.JPG': [1,1,0,0,0,0],
+      'D4.JPG': [1,1,1,1,1,0]
+    };
+    const blackDice = ['D1.JPG', 'D2.JPG', 'D3.JPG'];
+    let usedBlackDice = [];
+    let accumulatedBlackDice = [];
+    let accumulatedRedDice = [];
+    let gameOver = false;
+
+    function drawBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < numCasillas; i++) {
+        ctx.strokeStyle = '#ccc';
+        ctx.strokeRect(0, canvas.height - (i + 1) * casillaHeight, canvas.width, casillaHeight);
+        ctx.fillStyle = '#333';
+        ctx.fillText(`Casilla ${i + 1}`, 10, canvas.height - i * casillaHeight - 10);
+      }
+      players.forEach((player, idx) => {
+        const img = new Image();
+        img.src = player.img;
+        const y = canvas.height - player.pos * casillaHeight;
+        img.onload = () => {
+          ctx.drawImage(img, 220 + idx * 70, y, 40, 40);
+          if (player.heart) {
+            ctx.beginPath();
+            ctx.fillStyle = 'red';
+            ctx.arc(240 + idx * 70, y - 5, 6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        };
+      });
+    }
+
+    function randomFromArray(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function rollDie(faces) {
+      return faces[Math.floor(Math.random() * faces.length)];
+    }
+
+    function createControls() {
+      const container = document.getElementById('controls');
+      players.forEach((player, i) => {
+        const div = document.createElement('div');
+        div.className = 'player-controls';
+        div.innerHTML = `<strong>${player.name}</strong>`;
+        const andarBtn = document.createElement('button');
+        andarBtn.textContent = 'Andar';
+        andarBtn.onclick = () => setAction(i, 'andar');
+
+        const pararBtn = document.createElement('button');
+        pararBtn.textContent = 'Pararse';
+        pararBtn.onclick = () => setAction(i, 'parar');
+
+        div.appendChild(andarBtn);
+        div.appendChild(pararBtn);
+        container.appendChild(div);
+      });
+    }
+
+    function disableControls() {
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach(btn => btn.disabled = true);
+    }
+
+    function setAction(index, action) {
+      if (gameOver) return;
+      players[index].action = action;
+      if (players.every(p => p.action)) {
+        executeTurn();
+      }
+    }
+
+    function executeTurn() {
+      const log = document.getElementById('log');
+      log.innerHTML += `<hr><strong>Nuevo turno:</strong><br>`;
+      const sacado = randomFromArray(diceImgs);
+      log.innerHTML += `Dado sacado: <img src="${sacado}" width="30"><br>`;
+
+      if (blackDice.includes(sacado)) {
+        usedBlackDice.push(sacado);
+        accumulatedBlackDice.push(sacado);
+      } else if (sacado === 'D4.JPG') {
+        accumulatedRedDice.push(sacado);
+      }
+
+      players.forEach(p => {
+        if (p.action === 'parar') {
+          if (sacado === 'D4.JPG' && !p.heart) {
+            p.heart = true;
+            log.innerHTML += `${p.name} parado gana corazón.<br>`;
+          }
+        } else if (p.action === 'andar') {
+          let avance = 0;
+          let retroceso = 0;
+          let detallesAvance = [];
+          let detallesRetro = [];
+
+          accumulatedBlackDice.forEach(die => {
+            const r = rollDie(diceConfig[die]);
+            avance += r;
+            detallesAvance.push(`${die}: ${r}`);
+          });
+
+          accumulatedRedDice.forEach(() => {
+            const r = rollDie(diceConfig['D4.JPG']);
+            retroceso += r;
+            detallesRetro.push(`D4.JPG: ${r}`);
+          });
+
+          log.innerHTML += `<em>${p.name} lanza:</em><br>`;
+          if (detallesAvance.length > 0)
+            log.innerHTML += `🟤 Dados negros: ${detallesAvance.join(', ')} → Total: ${avance}<br>`;
+          if (detallesRetro.length > 0)
+            log.innerHTML += `🔴 Dados rojos: ${detallesRetro.join(', ')} → Total: ${retroceso}<br>`;
+
+          if (sacado === 'D4.JPG') {
+            if (p.heart) {
+              p.heart = false;
+              log.innerHTML += `${p.name} pierde su corazón, no se mueve.<br>`;
+            } else {
+              p.pos = Math.max(1, p.pos - retroceso);
+              log.innerHTML += `${p.name} retrocede ${retroceso} casillas.<br>`;
+            }
+          } else {
+            p.pos = Math.min(10, p.pos + avance);
+            log.innerHTML += `${p.name} avanza ${avance} casillas.<br>`;
+          }
+        }
+
+        p.action = null;
+      });
+
+      if (usedBlackDice.length >= 3 || sacado === 'D4.JPG') {
+        usedBlackDice = [];
+        accumulatedBlackDice = [];
+        accumulatedRedDice = [];
+        log.innerHTML += `🧺 La bolsa se repone con los 4 dados.<br>`;
+      }
+
+      const winners = players.filter(p => p.pos >= 10);
+      if (winners.length) {
+        log.innerHTML += `<strong>Ganadores:</strong> ${winners.map(w => w.name).join(', ')}<br>`;
+        gameOver = true;
+        disableControls();
+        setTimeout(() => {
+          alert(`¡Juego terminado! Ganador(es): ${winners.map(w => w.name).join(', ')}`);
+        }, 100);
+      }
+
+      drawBoard();
+    }
+
+    createControls();
+    drawBoard();
+  </script>
+</body>
+</html>
